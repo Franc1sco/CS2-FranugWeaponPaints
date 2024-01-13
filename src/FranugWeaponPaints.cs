@@ -5,8 +5,10 @@ using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Entities.Constants;
 using CounterStrikeSharp.API.Modules.Memory;
+using CounterStrikeSharp.API.Modules.Utils;
 using Newtonsoft.Json;
 using System.Text;
+using static CounterStrikeSharp.API.Core.Listeners;
 
 namespace FranugWeaponPaints;
 
@@ -191,10 +193,35 @@ public class FranugWeaponPaints : BasePlugin
         { "weapon_knife_skeleton", (ushort)ItemDefinition.SKELETON_KNIFE}
     };
 
+    internal static readonly Dictionary<string, string> knifeList = new()
+    {
+        { "weapon_knife", "Default Knife" },
+        { "weapon_knife_m9_bayonet", "M9 Bayonet" },
+        { "weapon_knife_karambit", "Karambit" },
+        { "weapon_bayonet", "Bayonet" },
+        { "weapon_knife_survival_bowie", "Bowie Knife" },
+        { "weapon_knife_butterfly", "Butterfly Knife" },
+        { "weapon_knife_falchion", "Falchion Knife" },
+        { "weapon_knife_flip", "Flip Knife" },
+        { "weapon_knife_gut", "Gut Knife" },
+        { "weapon_knife_tactical", "Huntsman Knife" },
+        { "weapon_knife_push", "Shadow Daggers" },
+        { "weapon_knife_gypsy_jackknife", "Navaja Knife" },
+        { "weapon_knife_stiletto", "Stiletto Knife" },
+        { "weapon_knife_widowmaker", "Talon Knife" },
+        { "weapon_knife_ursus", "Ursus Knife" },
+        { "weapon_knife_css", "Classic Knife"},
+        { "weapon_knife_cord", "Paracord Knife" },
+        { "weapon_knife_canis", "Survival Knife" },
+        { "weapon_knife_outdoor", "Nomad Knife" },
+        { "weapon_knife_skeleton", "Skeleton Knife" }
+    };
+
     private const int SKINS_SEPARATOR = 25;
     private const int SKINS_BLANKS = 20;
 
     internal static Dictionary<int, string> g_playersKnife = new();
+    internal static Dictionary<int, int> g_knifePickupCount = new Dictionary<int, int>();
     internal static Dictionary<int, Dictionary<int, WeaponInfo>> gPlayerWeaponsInfo = new Dictionary<int, Dictionary<int, WeaponInfo>>();
     private readonly Dictionary<int, int> iWSIndex = new();
     private readonly Dictionary<int, string> iWSWeapon = new();
@@ -216,6 +243,7 @@ public class FranugWeaponPaints : BasePlugin
                 {
                     gPlayerWeaponsInfo[(int)player.Index] = new Dictionary<int, WeaponInfo>();
                 }
+                g_knifePickupCount[(int)player!.Index] = 0;
             });
         }
 
@@ -265,9 +293,142 @@ public class FranugWeaponPaints : BasePlugin
                 {
                     gPlayerWeaponsInfo.Remove((int)player.Index);
                 }
+                if (g_playersKnife.ContainsKey((int)player.Index))
+                {
+                    g_playersKnife.Remove((int)player.Index);
+                }
+                if (g_knifePickupCount.ContainsKey((int)player.Index))
+                {
+                    g_knifePickupCount.Remove((int)player.Index);
+                }
                 return HookResult.Continue;
             }
         });
+
+        HookEntityOutput("weapon_knife", "OnPlayerPickup", OnPickup, HookMode.Pre);
+
+        RegisterListener<OnMapStart>(OnMapStart);
+
+        RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
+
+        RegisterEventHandler<EventRoundStart>(OnRoundStart, HookMode.Pre);
+
+    }
+
+    private HookResult OnPlayerSpawn(EventPlayerSpawn @event, GameEventInfo info)
+    {
+        CCSPlayerController? player = @event.Userid;
+        if (player == null || !player.IsValid || player.IsBot)
+        {
+            return HookResult.Continue;
+        }
+
+        g_knifePickupCount[(int)player.Index] = 0;
+
+
+        if (!PlayerHasKnife(player))
+        {
+            AddTimer(0.1f, () => GiveKnifeToPlayer(player));
+        }
+
+        return HookResult.Continue;
+    }
+
+    private HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
+    {
+        NativeAPI.IssueServerCommand("mp_t_default_melee \"\"");
+        NativeAPI.IssueServerCommand("mp_ct_default_melee \"\"");
+        NativeAPI.IssueServerCommand("mp_equipment_reset_rounds 0");
+
+        return HookResult.Continue;
+    }
+
+    private void OnMapStart(string mapName)
+    {
+
+        // TODO
+        // needed for now
+        AddTimer(2.0f, () =>
+        {
+
+            NativeAPI.IssueServerCommand("mp_t_default_melee \"\"");
+            NativeAPI.IssueServerCommand("mp_ct_default_melee \"\"");
+            NativeAPI.IssueServerCommand("mp_equipment_reset_rounds 0");
+        });
+    }
+
+        [ConsoleCommand("css_kf", "")]
+    [ConsoleCommand("sm_kf", "")]
+    [CommandHelper(minArgs: 0, usage: "knifeName]", whoCanExecute: CommandUsage.CLIENT_ONLY)]
+    public void CommandKnife(CCSPlayerController? player, CommandInfo info)
+    {
+        if (!string.IsNullOrEmpty(info.GetArg(1)))
+        {
+            var arg1 = info.GetArg(1);
+
+            if (arg1.Contains("default"))
+            {
+                if (g_playersKnife[(int)player.Index] == "weapon_knife")
+                {
+                    player.PrintToConsole("already set default knife");
+                    info.ReplyToCommand("already set default knife");
+                    return;
+                }
+
+                if (g_playersKnife.TryGetValue((int)player.Index, out var knife))
+                {
+                    g_playersKnife[(int)player.Index] = "weapon_knife";
+                    RefreshWeapons(player, knife);
+                    player.PrintToConsole("set default knife");
+                    info.ReplyToCommand("set default knife");
+                    return;
+                }
+                g_playersKnife[(int)player.Index] = "weapon_knife";
+                RefreshWeapons(player, "weapon_knife");
+
+                player.PrintToConsole("set default knife");
+                info.ReplyToCommand("set default knife");
+                return;
+            }
+
+            if (!knifeList.ContainsKey(arg1) && !knifeList.Keys.Any(k => k.Contains(arg1)))
+            {
+                player.PrintToConsole("invalid knife name");
+                info.ReplyToCommand("invalid knife name");
+                return;
+            }
+
+            var weaponDefIndex = weaponListDef.FirstOrDefault(w => w.Key.Contains(arg1, StringComparison.OrdinalIgnoreCase));
+
+            KeyValuePair<string, string>? weaponName = weaponList.FirstOrDefault(w => w.Key.Contains(arg1, StringComparison.OrdinalIgnoreCase));
+
+            g_playersKnife[(int)player.Index] = weaponName.Value.Key;
+            RefreshWeapons(player, weaponName.Value.Key);
+            player.PrintToConsole("new knife set to " + weaponName.Value.Value);
+            info.ReplyToCommand("new knife set to " + weaponName.Value.Value);
+            return;
+        } else {
+
+            for (int i = 0; i < SKINS_BLANKS; i++)
+            {
+                player.PrintToConsole(" ");
+            }
+            player.PrintToConsole("------------------------------------------------------------------");
+            player.PrintToConsole("Knife menu:");
+            player.PrintToConsole("------------------------------------------------------------------");
+            var count = 0;
+            for (int i = 0; i < knifeList.Count; i++)
+            {
+                StringBuilder sb = new StringBuilder();
+                var knife = knifeList.ElementAt(i);
+                sb.Append($"{knife.Key} - ★ {knife.Value}");
+                player.PrintToConsole(sb.ToString());
+                count++;
+
+                if (count >= SKINS_SEPARATOR) break;
+            }
+            player.PrintToConsole("------------------------------------------------------------------");
+        }
     }
 
     [ConsoleCommand("css_ws", "")]
@@ -556,16 +717,17 @@ public class FranugWeaponPaints : BasePlugin
 
         if (!gPlayerWeaponsInfo.ContainsKey(playerIndex)) return;
 
-        //if (isKnife && !g_playersKnife.ContainsKey(playerIndex) || isKnife && g_playersKnife[playerIndex] == "weapon_knife") return;
-        if (isKnife) return;
+        if (isKnife && !g_playersKnife.ContainsKey(playerIndex) || isKnife && g_playersKnife[playerIndex] == "weapon_knife") return;
 
         int weaponDefIndex = weapon.AttributeManager.Item.ItemDefinitionIndex;
 
         if (isKnife)
         {
+            //Console.WriteLine("EntityQuality 3 hecho");
             weapon.AttributeManager.Item.EntityQuality = 3;
         }
 
+        //Console.WriteLine("casi aplicado skin para weaponindex " + weaponDefIndex);
         if (!gPlayerWeaponsInfo[playerIndex].ContainsKey(weaponDefIndex)) return;
         WeaponInfo weaponInfo = gPlayerWeaponsInfo[playerIndex][weaponDefIndex];
         weapon.AttributeManager.Item.ItemID = 16384;
@@ -574,6 +736,7 @@ public class FranugWeaponPaints : BasePlugin
         weapon.FallbackPaintKit = weaponInfo.Paint;
         weapon.FallbackSeed = weaponInfo.Seed;
         weapon.FallbackWear = weaponInfo.Wear;
+        //Console.WriteLine("aplicado skin " + weaponInfo.Paint);
         if (!isKnife && weapon.CBodyComponent != null && weapon.CBodyComponent.SceneNode != null)
         {
             var skeleton = GetSkeletonInstance(weapon.CBodyComponent.SceneNode);
@@ -601,6 +764,13 @@ public class FranugWeaponPaints : BasePlugin
             {
                 if (weapon != null && weapon.IsValid && weapon.Value != null && weapon.Value.IsValid)
                 {
+                    if (searched.Contains("knife") || searched.Contains("bayonet"))
+                    {
+                        //player.RemoveItemByDesignerName(weapon.Value.DesignerName, true);
+                        RemoveKnife(player, true);
+                        GiveKnifeToPlayer(player);
+                        return;
+                    }
                     //player.PrintToConsole("debug - searched " + searched + " and found " + weapon.Value.DesignerName);
                     if (weapon.Index <= 0 || !weapon.Value.DesignerName.Contains("weapon_") || !weapon.Value.DesignerName.Equals(searched)) continue;
                     //if (weapon.Value.AttributeManager.Item.ItemDefinitionIndex == 42 || weapon.Value.AttributeManager.Item.ItemDefinitionIndex == 59)
@@ -610,7 +780,9 @@ public class FranugWeaponPaints : BasePlugin
                         if (weapon.Value.DesignerName.Contains("knife") || weapon.Value.DesignerName.Contains("bayonet"))
                         {
                             //player.RemoveItemByDesignerName(weapon.Value.DesignerName, true);
-                            //GiveKnifeToPlayer(player);
+                            RemoveKnife(player, true);
+                            GiveKnifeToPlayer(player);
+                            return;
                         }
                         else
                         {
@@ -646,6 +818,76 @@ public class FranugWeaponPaints : BasePlugin
         }
     }
 
+    public HookResult OnPickup(CEntityIOOutput output, string name, CEntityInstance activator, CEntityInstance caller, CVariant value, float delay)
+    {
+        CCSPlayerController? player = Utilities.GetEntityFromIndex<CCSPlayerPawn>((int)activator.Index).OriginalController.Value;
+
+        if (player == null || player.IsBot || player.IsHLTV)
+            return HookResult.Continue;
+
+        if (player == null || !player.IsValid || player.AuthorizedSteamID == null ||
+             !g_playersKnife.ContainsKey((int)player.Index))
+            return HookResult.Continue;
+
+        CBasePlayerWeapon weapon = new(caller.Handle);
+
+        if (weapon.AttributeManager.Item.ItemDefinitionIndex != 42 && weapon.AttributeManager.Item.ItemDefinitionIndex != 59)
+            return HookResult.Continue;
+
+        if (g_playersKnife.TryGetValue((int)player.Index, out var knife) && knife != "weapon_knife")
+        {
+            player.RemoveItemByDesignerName(weapon.DesignerName);
+            AddTimer(0.2f, () => GiveKnifeToPlayer(player));
+        }
+
+        return HookResult.Continue;
+    }
+
+    private void GiveKnifeToPlayer(CCSPlayerController? player)
+    {
+        g_knifePickupCount[(int)player.Index]++;
+        if (g_knifePickupCount[(int)player.Index] > 10) {
+            player.PrintToChat("max knife changes reached this round");
+            return; 
+        }
+
+        if (g_playersKnife.TryGetValue((int)player.Index, out var knife) && knife != "")
+        {
+            //Console.WriteLine("dado cuchillo "+knife);
+            player.GiveNamedItem(knife);
+        }
+        else
+        {
+            var defaultKnife = (CsTeam)player.TeamNum == CsTeam.Terrorist ? "weapon_knife_t" : "weapon_knife";
+            player.GiveNamedItem(defaultKnife);
+        }
+    }
+
+    private bool PlayerHasKnife(CCSPlayerController? player)
+    {
+        if (player == null || !player.IsValid || player.PlayerPawn == null || !player.PlayerPawn.IsValid || !player.PawnIsAlive)
+        {
+            return false;
+        }
+
+        if (player.PlayerPawn?.Value == null || player.PlayerPawn?.Value.WeaponServices == null || player.PlayerPawn?.Value.ItemServices == null)
+            return false;
+
+        var weapons = player.PlayerPawn.Value.WeaponServices?.MyWeapons;
+        if (weapons == null) return false;
+        foreach (var weapon in weapons)
+        {
+            if (weapon != null && weapon.IsValid && weapon.Value != null && weapon.Value.IsValid)
+            {
+                if (weapon.Value.DesignerName.Contains("knife") || weapon.Value.DesignerName.Contains("bayonet"))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private KeyValuePair<string, Skin>? GetSkinSearched(int skinIndex)
     {
 
@@ -657,6 +899,36 @@ public class FranugWeaponPaints : BasePlugin
         }
 
         return null;
+    }
+
+    private bool RemoveKnife(CCSPlayerController player, bool shouldRemoveEntity)
+    {
+        CHandle<CBasePlayerWeapon>? item = null;
+        if (player.PlayerPawn.Value == null || player.PlayerPawn.Value.WeaponServices == null) return false;
+
+        foreach (var weapon in player.PlayerPawn.Value.WeaponServices.MyWeapons)
+        {
+            if (weapon is not { IsValid: true, Value.IsValid: true })
+                continue;
+            if (!weapon.Value.DesignerName.Contains("knife") && !weapon.Value.DesignerName.Contains("bayonet"))
+                continue;
+
+            item = weapon;
+        }
+
+        if (item != null && item.Value != null)
+        {
+            player.PlayerPawn.Value.RemovePlayerItem(item.Value);
+
+            if (shouldRemoveEntity)
+            {
+                item.Value.Remove();
+            }
+
+            return true;
+        }
+
+        return false;
     }
 }
 
