@@ -44,7 +44,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 {
     public override string ModuleName => "Franug Weapon Paints";
     public override string ModuleAuthor => "Franc1sco Franug";
-    public override string ModuleVersion => "0.0.6";
+    public override string ModuleVersion => "0.0.7b";
 
     public ConfigGen Config { get; set; } = null!;
     public void OnConfigParsed(ConfigGen config) { Config = config; }
@@ -272,10 +272,6 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             {
                 iWSIndex.Add((int)player.Index, 0);
                 iWSWeapon.Add((int)player.Index, "");
-                if (!gPlayerWeaponsInfo.TryGetValue((int)player.Index, out _))
-                {
-                    gPlayerWeaponsInfo[(int)player.Index] = new Dictionary<int, WeaponInfo>();
-                }
                 getPlayerData(player);
                 g_knifePickupCount[(int)player!.Index] = 0;
             });
@@ -296,10 +292,6 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             {
                 iWSIndex.Add((int)player.Index, 0);
                 iWSWeapon.Add((int)player.Index, "");
-                if (!gPlayerWeaponsInfo.TryGetValue((int)player.Index, out _))
-                {
-                    gPlayerWeaponsInfo[(int)player.Index] = new Dictionary<int, WeaponInfo>();
-                }
                 getPlayerData(player);
                 return HookResult.Continue;
             }
@@ -1049,7 +1041,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
     {
         if (Config.DatabaseType != "MySQL")
         {
-            if (RecordExistsSQLite(player, weapon))
+            if (RecordExists(player))
             {
                 _ = UpdateQueryDataSQLite(player, weapon, skinid);
             }
@@ -1060,7 +1052,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         }
         else
         {
-            if (RecordExistsMySQL(player, weapon))
+            if (RecordExists(player))
             {
                 _ = UpdateQueryDataMySQL(player, weapon, skinid);
             }
@@ -1107,63 +1099,9 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         connectionMySQL.Close();
     }
 
-    private bool RecordExistsSQLite(CCSPlayerController player, int weapon)
+    private bool RecordExists(CCSPlayerController player)
     {
-        try
-        {
-            connectionSQLITE.Open();
-
-            var query = "SELECT * FROM wp_player_skins WHERE steamid = @steamid AND weapon_defindex = @weapon_defindex;";
-            var command = new SqliteCommand(query, connectionSQLITE);
-            command.Parameters.AddWithValue("@steamid", player.SteamID);
-            command.Parameters.AddWithValue("@weapon_defindex", weapon);
-
-            var reader = command.ExecuteReader();
-            var exists = false;
-            if (reader.Read())
-            {
-                exists = true;
-            }
-
-            //int count = Convert.ToInt32(command.ExecuteScalar());
-            connectionSQLITE.Close();
-            return exists;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Franug-WeaponPaints] RecordExistsSQLite ******* An error occurred: {ex.Message}");
-
-            return false;
-        }
-    }
-
-    private bool RecordExistsMySQL(CCSPlayerController player, int weapon)
-    {
-        try
-        {
-            connectionMySQL.Open();
-
-            var query = "SELECT * FROM wp_player_skins WHERE steamid = @steamid AND weapon_defindex = @weapon_defindex;";
-            var command = new MySqlCommand(query, connectionMySQL);
-            command.Parameters.AddWithValue("@steamid", player.SteamID);
-            command.Parameters.AddWithValue("@weapon_defindex", weapon);
-
-            var reader = command.ExecuteReader();
-            var exists = false;
-            if (reader.Read())
-            {
-                exists = true;
-            }
-
-            connectionSQLITE.Close();
-            return exists;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Franug-WeaponPaints] RecordExistsMySQL ******* An error occurred: {ex.Message}");
-
-            return false;
-        }
+        return gPlayerWeaponsInfo.TryGetValue((int)player.Index, out _);
     }
 
     public async Task InsertQueryDataSQLite(CCSPlayerController player, int weapon, int skinid)
@@ -1231,6 +1169,10 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
+                if (!gPlayerWeaponsInfo.TryGetValue((int)player.Index, out _))
+                {
+                    gPlayerWeaponsInfo[(int)player.Index] = new Dictionary<int, WeaponInfo>();
+                }
                 int weaponDefIndex = Convert.ToInt32(reader["weapon_defindex"]);
                 int skinid = Convert.ToInt32(reader["weapon_paint_id"]);
 
@@ -1325,6 +1267,10 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
+                if (!gPlayerWeaponsInfo.TryGetValue((int)player.Index, out _))
+                {
+                    gPlayerWeaponsInfo[(int)player.Index] = new Dictionary<int, WeaponInfo>();
+                }
                 int weaponDefIndex = Convert.ToInt32(reader["weapon_defindex"]);
                 int skinid = Convert.ToInt32(reader["weapon_paint_id"]);
 
