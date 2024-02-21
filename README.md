@@ -7,7 +7,7 @@ Weapons paints plugin for CS2
 
 ### Installation
 
-Drag and drop from [releases](https://github.com/Franc1sco/CS2-FranugWeaponPaints/releases) to game/csgo/addons/counterstrikesharp/plugins
+Drag and drop from the BUILD section to game/csgo/addons/counterstrikesharp/plugins
 
 
 ### Configuration

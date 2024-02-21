@@ -13,7 +13,8 @@ using static CounterStrikeSharp.API.Core.Listeners;
 using System.Data;
 using Microsoft.Data.Sqlite;
 using MySqlConnector;
-using CounterStrikeSharp.API.Modules.Entities;
+using CounterStrikeSharp.API.Core.Translations;
+using System.Globalization;
 
 namespace FranugWeaponPaints;
 
@@ -43,7 +44,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 {
     public override string ModuleName => "Franug Weapon Paints";
     public override string ModuleAuthor => "Franc1sco Franug";
-    public override string ModuleVersion => "0.0.2";
+    public override string ModuleVersion => "0.0.6";
 
     public ConfigGen Config { get; set; } = null!;
     public void OnConfigParsed(ConfigGen config) { Config = config; }
@@ -258,7 +259,8 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 
 
 
-    internal static Dictionary<string, Skin> skinList = new();
+    internal static Dictionary<string, Dictionary<string, Skin>> skinList = new();
+    private List<string> cultureList = new();
 
 
     public override void Load(bool hotReload)
@@ -392,9 +394,12 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 
     [ConsoleCommand("css_kf", "")]
     [ConsoleCommand("sm_kf", "")]
+    [ConsoleCommand("css_knife", "")]
+    [ConsoleCommand("sm_knife", "")]
     [CommandHelper(minArgs: 0, usage: "knifeName]", whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void CommandKnife(CCSPlayerController? player, CommandInfo info)
     {
+        player.PrintToChat("check console for see output");
         if (!string.IsNullOrEmpty(info.GetArg(1)))
         {
             var arg1 = info.GetArg(1);
@@ -467,10 +472,39 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
     }
 
     [ConsoleCommand("css_ws", "")]
-    [ConsoleCommand("sm_ws", "")]
-    [CommandHelper(minArgs: 1, usage: "weaponName skinID]", whoCanExecute: CommandUsage.CLIENT_ONLY)]
+    //[ConsoleCommand("sm_ws", "")]
+    [CommandHelper(minArgs: 0, usage: "weaponName skinID", whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void CommandWs(CCSPlayerController? player, CommandInfo info)
     {
+        if (!Utility.IsPlayerValid(player)) return;
+
+        if (string.IsNullOrEmpty(info.GetArg(1)))
+        {
+            player.PrintToChat("check console for see the complete output. Use !ws weaponName skinID");
+            player.PrintToChat("Example: !ws awp 2");
+            player.PrintToChat("Also you can change the skin list language with !lang");
+            for (int i = 0; i < SKINS_BLANKS; i++)
+            {
+                player.PrintToConsole(" ");
+            }
+            player.PrintToConsole("------------------------------------------------------------------");
+            player.PrintToConsole("Weapon list menu:");
+            player.PrintToConsole("------------------------------------------------------------------");
+            for (int i = 0; i < weaponList.Count; i++)
+            {
+                StringBuilder sb = new StringBuilder();
+                var weapon = weaponList.ElementAt(i);
+                sb.Append($"{weapon.Key} - ★ {weapon.Value}");
+                player.PrintToConsole(sb.ToString());
+            }
+            player.PrintToConsole("------------------------------------------------------------------");
+            player.PrintToConsole("Use css_ws weaponname or !ws weapon on chat for choose a weapon first");
+            player.PrintToConsole("Example: css_ws awp");
+            player.PrintToConsole("------------------------------------------------------------------");
+
+            return;
+        }
+
         var arg1 = info.GetArg(1);
 
         if (!weaponList.ContainsKey(arg1) && !weaponList.Keys.Any(k => k.Contains(arg1)))
@@ -479,6 +513,9 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             info.ReplyToCommand("invalid weapon name");
             return;
         }
+
+        var culture = getValidLang(player);
+        //Console.WriteLine("usuario con idioma " + culture);
 
         if (!string.IsNullOrEmpty(info.GetArg(2)))
         {
@@ -492,10 +529,10 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 
             var skinId = int.Parse(arg2);
 
-            if (skinId > skinList.Count - 1 || skinId < 0)
+            if (skinId > skinList[culture].Count - 1 || skinId < 0)
             {
-                player.PrintToConsole("second arg must be a number and must be between 0-" + (skinList.Count - 1));
-                info.ReplyToCommand("second arg must be a number and must be between 0-" + (skinList.Count - 1));
+                player.PrintToConsole("second arg must be a number and must be between 0-" + (skinList[culture].Count - 1));
+                info.ReplyToCommand("second arg must be a number and must be between 0-" + (skinList[culture].Count - 1));
                 return;
             }
 
@@ -513,14 +550,14 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
                 updatePlayer(player, weaponDefIndex.Value, 0);
                 return;
             }
-            for (int i = 0; i < skinList.Count; i++)
+            for (int i = 0; i < skinList[culture].Count; i++)
             {
-                var current = skinList.ElementAt(i);
+                var current = skinList[culture].ElementAt(i);
 
                 if (int.Parse(current.Value.Index) == skinId) break;
             }
 
-            var newSkin = GetSkinSearched(skinId);
+            var newSkin = GetSkinSearched(skinId, culture);
             if (newSkin == null)
             {
 
@@ -545,6 +582,8 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             return;
         }
 
+        player.PrintToChat("check console for see output");
+
         for (int i = 0; i < SKINS_BLANKS; i++)
         {
             player.PrintToConsole(" ");
@@ -554,16 +593,16 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         player.PrintToConsole($"{searchedWeapon.Value}:");
         player.PrintToConsole("------------------------------------------------------------------");
         var count = 0;
-        for (int i = iWSIndex[(int)player.Index]; i < skinList.Count; i += 2)
+        for (int i = iWSIndex[(int)player.Index]; i < skinList[culture].Count; i += 2)
         {
             StringBuilder sb = new StringBuilder();
-            var firstSkin = skinList.ElementAt(i);
+            var firstSkin = skinList[culture].ElementAt(i);
             sb.Append($"{firstSkin.Value.Index} - {firstSkin.Key}");
 
-            if (i + 1 < skinList.Count)
+            if (i + 1 < skinList[culture].Count)
             {
                 sb.Append("             ");
-                var secondSkin = skinList.ElementAt(i + 1);
+                var secondSkin = skinList[culture].ElementAt(i + 1);
                 sb.Append($"{secondSkin.Value.Index} - {secondSkin.Key}");
             }
 
@@ -585,6 +624,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
     [CommandHelper(minArgs: 0, usage: "", whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void CommandWsNext(CCSPlayerController? player, CommandInfo info)
     {
+        if (!Utility.IsPlayerValid(player)) return;
 
         if (iWSWeapon[(int)player.Index] == null || iWSWeapon[(int)player.Index] == "")
         {
@@ -593,7 +633,9 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             return;
         }
 
-        if (iWSIndex[(int)player.Index] + SKINS_SEPARATOR >= skinList.Count)
+        var culture = getValidLang(player);
+
+        if (iWSIndex[(int)player.Index] + SKINS_SEPARATOR >= skinList[culture].Count)
         {
             player.PrintToConsole("Max paints reached");
             info.ReplyToCommand("Max paints reached");
@@ -610,16 +652,16 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         player.PrintToConsole($"{iWSWeapon[(int)player.Index]}:");
         player.PrintToConsole(" ------------------------------------------------------------------");
         var count = 0;
-        for (int i = iWSIndex[(int)player.Index]; i < skinList.Count; i += 2)
+        for (int i = iWSIndex[(int)player.Index]; i < skinList[culture].Count; i += 2)
         {
             StringBuilder sb = new StringBuilder();
-            var firstSkin = skinList.ElementAt(i);
+            var firstSkin = skinList[culture].ElementAt(i);
             sb.Append($"{firstSkin.Value.Index} - {firstSkin.Key}");
 
-            if (i + 1 < skinList.Count)
+            if (i + 1 < skinList[culture].Count)
             {
                 sb.Append("             ");
-                var secondSkin = skinList.ElementAt(i + 1);
+                var secondSkin = skinList[culture].ElementAt(i + 1);
                 sb.Append($"{secondSkin.Value.Index} - {secondSkin.Key}");
             }
 
@@ -639,6 +681,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
     [CommandHelper(minArgs: 0, usage: "", whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void CommandWsBack(CCSPlayerController? player, CommandInfo info)
     {
+        if (!Utility.IsPlayerValid(player)) return;
 
         if (iWSWeapon[(int)player.Index] == null || iWSWeapon[(int)player.Index] == "")
         {
@@ -646,6 +689,8 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             info.ReplyToCommand("You need to choose weapon first");
             return;
         }
+
+        var culture = getValidLang(player);
 
         if (iWSIndex[(int)player.Index] - SKINS_SEPARATOR <= 0)
         {
@@ -664,16 +709,16 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         player.PrintToConsole($"{iWSWeapon[(int)player.Index]}:");
         player.PrintToConsole("------------------------------------------------------------------");
         var count = 0;
-        for (int i = iWSIndex[(int)player.Index]; i < skinList.Count; i += 2)
+        for (int i = iWSIndex[(int)player.Index]; i < skinList[culture].Count; i += 2)
         {
             StringBuilder sb = new StringBuilder();
-            var firstSkin = skinList.ElementAt(i);
+            var firstSkin = skinList[culture].ElementAt(i);
             sb.Append($"{firstSkin.Value.Index} - {firstSkin.Key}");
 
-            if (i + 1 < skinList.Count)
+            if (i + 1 < skinList[culture].Count)
             {
                 sb.Append("             ");
-                var secondSkin = skinList.ElementAt(i + 1);
+                var secondSkin = skinList[culture].ElementAt(i + 1);
                 sb.Append($"{secondSkin.Value.Index} - {secondSkin.Key}");
             }
 
@@ -689,28 +734,31 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 
     private void loadList()
     {
-        string filePath = Server.GameDirectory + "/csgo/addons/counterstrikesharp/plugins/FranugWeaponPaints/skins_en.json";
 
-        string json = File.ReadAllText(filePath);
-
-        SkinCollection skinCollection = JsonConvert.DeserializeObject<SkinCollection>(json);
-
-        Dictionary<string, Skin> skins = skinCollection.Skins;
-
-        foreach (var skin in skinCollection.Skins.OrderBy(x => int.Parse(x.Value.Index)))
+        var filePath = "";
+        foreach (var culture in CultureInfo.GetCultures(CultureTypes.AllCultures))
         {
-            skinList.Add(skin.Key, skin.Value);
+            filePath = Server.GameDirectory + $"/csgo/addons/counterstrikesharp/plugins/FranugWeaponPaints/skins/skins_{culture.Name}.json";
+
+            if (File.Exists(filePath))
+            {
+                //Console.WriteLine("añadido idioma " + culture.Name);
+                cultureList.Add(culture.Name);
+                string json = File.ReadAllText(filePath);
+
+                SkinCollection skinCollection = JsonConvert.DeserializeObject<SkinCollection>(json);
+
+                Dictionary<string, Skin> skins = skinCollection.Skins;
+
+                skinList[culture.Name] = new();
+
+                foreach (var skin in skinCollection.Skins.OrderBy(x => int.Parse(x.Value.Index)))
+                {
+                    //Console.WriteLine("skins para idioma " + culture.Name + " es " + skin.Key);
+                    skinList[culture.Name].Add(skin.Key, skin.Value);
+                }
+            }
         }
-
-        /*
-        Console.WriteLine("Información de Skins:");
-        foreach (var skin in skinList)
-        {
-            Console.WriteLine($"Nombre: {skin.Key}");
-            Console.WriteLine($"Index: {skin.Value.Index}");
-            Console.WriteLine($"Classes: {skin.Value.Classes}");
-            Console.WriteLine();
-        }*/
     }
 
     private void OnEntityCreated(CEntityInstance entity)
@@ -873,6 +921,11 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 
         if (g_playersKnife.TryGetValue((int)player.Index, out var knife) && knife != "weapon_knife")
         {
+            //var weaponDefIndex = weaponListDef.FirstOrDefault(w => w.Key.Contains(knife, StringComparison.OrdinalIgnoreCase));
+            //weapon.AttributeManager.Item.ItemDefinitionIndex = weaponDefIndex.Value;
+
+            //Utilities.SetStateChanged(weapon, "CEconItemView", "m_iItemDefinitionIndex");
+            //ChangeWeaponAttributes(weapon, player, true);
             player.RemoveItemByDesignerName(weapon.DesignerName);
             AddTimer(0.2f, () => GiveKnifeToPlayer(player));
         }
@@ -925,12 +978,12 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         return false;
     }
 
-    private KeyValuePair<string, Skin>? GetSkinSearched(int skinIndex)
+    private KeyValuePair<string, Skin>? GetSkinSearched(int skinIndex, string culture)
     {
 
-        for (int i = 0; i < skinList.Count; i++)
+        for (int i = 0; i < skinList[culture].Count; i++)
         {
-            var current = skinList.ElementAt(i);
+            var current = skinList[culture].ElementAt(i);
 
             if (int.Parse(current.Value.Index) == skinIndex) return current;
         }
@@ -1298,6 +1351,17 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         {
             await connectionMySQL?.CloseAsync();
         }
+    }
+
+    private string getValidLang(CCSPlayerController player)
+    {
+        var currentlang = player.GetLanguage().Name.ToLower();
+        if (cultureList.Find(lang => lang == currentlang) == null)
+        {
+            currentlang = "en";
+        }
+
+        return currentlang;
     }
 }
 
