@@ -44,7 +44,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 {
     public override string ModuleName => "Franug Weapon Paints";
     public override string ModuleAuthor => "Franc1sco Franug";
-    public override string ModuleVersion => "0.0.7b";
+    public override string ModuleVersion => "0.0.7c";
 
     public ConfigGen Config { get; set; } = null!;
     public void OnConfigParsed(ConfigGen config) { Config = config; }
@@ -272,6 +272,10 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             {
                 iWSIndex.Add((int)player.Index, 0);
                 iWSWeapon.Add((int)player.Index, "");
+                if (!gPlayerWeaponsInfo.TryGetValue((int)player.Index, out _))
+                {
+                    gPlayerWeaponsInfo[(int)player.Index] = new Dictionary<int, WeaponInfo>();
+                }
                 getPlayerData(player);
                 g_knifePickupCount[(int)player!.Index] = 0;
             });
@@ -290,6 +294,10 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             }
             else
             {
+                if (!gPlayerWeaponsInfo.TryGetValue((int)player.Index, out _))
+                {
+                    gPlayerWeaponsInfo[(int)player.Index] = new Dictionary<int, WeaponInfo>();
+                }
                 iWSIndex.Add((int)player.Index, 0);
                 iWSWeapon.Add((int)player.Index, "");
                 getPlayerData(player);
@@ -564,13 +572,11 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
                 Seed = 0,
                 Wear = 0
             };
-
-
+            updatePlayer(player, weaponDefIndex.Value, skinId);
             gPlayerWeaponsInfo[(int)player.Index][weaponDefIndex.Value] = weaponInfo;
             RefreshWeapons(player, weaponName.Value.Key);
             player.PrintToConsole("new skin set to " + weaponName.Value.Value + " | " + newSkin.Value.Key);
             info.ReplyToCommand("new skin set to " + weaponName.Value.Value + " | " + newSkin.Value.Key);
-            updatePlayer(player, weaponDefIndex.Value, skinId);
             return;
         }
 
@@ -1041,7 +1047,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
     {
         if (Config.DatabaseType != "MySQL")
         {
-            if (RecordExists(player))
+            if (RecordExists(player, weapon))
             {
                 _ = UpdateQueryDataSQLite(player, weapon, skinid);
             }
@@ -1052,7 +1058,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         }
         else
         {
-            if (RecordExists(player))
+            if (RecordExists(player, weapon))
             {
                 _ = UpdateQueryDataMySQL(player, weapon, skinid);
             }
@@ -1099,9 +1105,9 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         connectionMySQL.Close();
     }
 
-    private bool RecordExists(CCSPlayerController player)
+    private bool RecordExists(CCSPlayerController player, int weapon)
     {
-        return gPlayerWeaponsInfo.TryGetValue((int)player.Index, out _);
+        return gPlayerWeaponsInfo[(int)player.Index].ContainsKey(weapon);
     }
 
     public async Task InsertQueryDataSQLite(CCSPlayerController player, int weapon, int skinid)
@@ -1169,10 +1175,6 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
-                if (!gPlayerWeaponsInfo.TryGetValue((int)player.Index, out _))
-                {
-                    gPlayerWeaponsInfo[(int)player.Index] = new Dictionary<int, WeaponInfo>();
-                }
                 int weaponDefIndex = Convert.ToInt32(reader["weapon_defindex"]);
                 int skinid = Convert.ToInt32(reader["weapon_paint_id"]);
 
@@ -1267,10 +1269,6 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
-                if (!gPlayerWeaponsInfo.TryGetValue((int)player.Index, out _))
-                {
-                    gPlayerWeaponsInfo[(int)player.Index] = new Dictionary<int, WeaponInfo>();
-                }
                 int weaponDefIndex = Convert.ToInt32(reader["weapon_defindex"]);
                 int skinid = Convert.ToInt32(reader["weapon_paint_id"]);
 
