@@ -44,7 +44,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 {
     public override string ModuleName => "Franug Weapon Paints";
     public override string ModuleAuthor => "Franc1sco Franug";
-    public override string ModuleVersion => "0.0.7d";
+    public override string ModuleVersion => "0.0.8";
 
     public ConfigGen Config { get; set; } = null!;
     public void OnConfigParsed(ConfigGen config) { Config = config; }
@@ -450,6 +450,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 
             g_playersKnife[(int)player.Index] = weaponName.Value.Key;
             RefreshWeapons(player, weaponName.Value.Key);
+            _ = updatePlayerKnifeAsync(player, weaponName.Value.Key);
             player.PrintToConsole("new knife set to " + weaponName.Value.Value);
             info.ReplyToCommand("new knife set to " + weaponName.Value.Value);
             return;
@@ -1083,6 +1084,68 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         }
     }
 
+    private async Task updatePlayerKnifeAsync(CCSPlayerController player, String weapon)
+    {
+        if (Config.DatabaseType != "MySQL")
+        {
+            _ = UpdateKnifeQueryDataSQLite(player, weapon);
+        }
+        else
+        {
+            _ = UpdateKnifeQueryDataMySQL(player, weapon);
+        }
+    }
+
+    private async Task UpdateKnifeQueryDataMySQL(CCSPlayerController player, String weapon)
+    {
+        try
+        {
+            await connectionMySQL.OpenAsync();
+
+            var query = "REPLACE INTO wp_player_knives (steamid, weapon_defindex) VALUES (@steamid, @weapon_defindex);";
+            var command = new MySqlCommand(query, connectionMySQL);
+
+            command.Parameters.AddWithValue("@steamid", player.SteamID);
+            command.Parameters.AddWithValue("@weapon_defindex", weapon);
+
+            await command.ExecuteNonQueryAsync();
+            connectionMySQL?.Close();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Franug-WeaponPaints] UpdateKnifeQueryDataSQLite ******* An error occurred: {ex.Message}");
+        }
+        finally
+        {
+            await connectionMySQL?.CloseAsync();
+        }
+    }
+
+    private async Task UpdateKnifeQueryDataSQLite(CCSPlayerController player, String weapon)
+    {
+        try
+        {
+            await connectionSQLITE.OpenAsync();
+
+            var query = "REPLACE INTO wp_player_knives (steamid, weapon_defindex) VALUES (@steamid, @weapon_defindex);";
+            var command = new SqliteCommand(query, connectionSQLITE);
+
+            command.Parameters.AddWithValue("@steamid", player.SteamID);
+            command.Parameters.AddWithValue("@weapon_defindex", weapon);
+
+            await command.ExecuteNonQueryAsync();
+            connectionSQLITE?.Close();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Franug-WeaponPaints] UpdateKnifeQueryDataSQLite ******* An error occurred: {ex.Message}");
+        }
+        finally
+        {
+            await connectionSQLITE?.CloseAsync();
+        }
+    }
+
     private void CreateTableSQLite()
     {
         string dbFilePath = Server.GameDirectory + Config.DatabaseFilePath;
@@ -1100,6 +1163,14 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             command.CommandText = "CREATE TABLE IF NOT EXISTS wp_player_skins (steamid varchar(32) NOT NULL, weapon_defindex int(64) NOT NULL, weapon_paint_id int(6) NOT NULL);";
             command.ExecuteNonQuery();
         }
+
+        query = "CREATE TABLE IF NOT EXISTS wp_player_knives (steamid varchar(32) NOT NULL, weapon_defindex varchar(64) NOT NULL, PRIMARY KEY(steamid));";
+
+        using (SqliteCommand command = new SqliteCommand(query, connectionSQLITE))
+        {
+            command.CommandText = "CREATE TABLE IF NOT EXISTS wp_player_knives (steamid varchar(32) NOT NULL, weapon_defindex varchar(64) NOT NULL, PRIMARY KEY(steamid));";
+            command.ExecuteNonQuery();
+        }
         connectionSQLITE.Close();
     }
 
@@ -1115,7 +1186,11 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         {
             command.ExecuteNonQuery();
         }
-
+        using (MySqlCommand command = new MySqlCommand("CREATE TABLE IF NOT EXISTS `wp_player_knives` (`steamid` varchar(64) NOT NULL, `weapon_defindex` varchar(64) NOT NULL, PRIMARY KEY(steamid)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;",
+            connectionMySQL))
+        {
+            command.ExecuteNonQuery();
+        }
         connectionMySQL.Close();
     }
 
@@ -1271,6 +1346,22 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
                     //Console.WriteLine($"[ws] weapon index {weaponDefIndex} y weaponskin {skinid}");
                 }
             }
+
+            query = "SELECT weapon_defindex FROM wp_player_knives WHERE steamid = @steamid;";
+            command = new SqliteCommand(query, connectionSQLITE);
+            command.Parameters.AddWithValue("@steamid", player.SteamID);
+            reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                String? knife = Convert.ToString(reader["weapon_defindex"]);
+
+                if (!String.IsNullOrEmpty(knife))
+                {
+                    g_playersKnife[(int)player.Index] = knife;
+
+                    //Console.WriteLine($"[ws] weapon index {weaponDefIndex} y weaponskin {skinid}");
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -1361,6 +1452,23 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
                     };
 
                     gPlayerWeaponsInfo[(int)player.Index][weaponDefIndex] = weaponInfo;
+
+
+                    //Console.WriteLine($"[ws] weapon index {weaponDefIndex} y weaponskin {skinid}");
+                }
+            }
+
+            query = "SELECT weapon_defindex FROM wp_player_knives WHERE steamid = @steamid;";
+            command = new MySqlCommand(query, connectionMySQL);
+            command.Parameters.AddWithValue("@steamid", player.SteamID);
+            reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                String? knife = Convert.ToString(reader["weapon_defindex"]);
+
+                if (!String.IsNullOrEmpty(knife))
+                {
+                    g_playersKnife[(int)player.Index] = knife;
 
                     //Console.WriteLine($"[ws] weapon index {weaponDefIndex} y weaponskin {skinid}");
                 }
