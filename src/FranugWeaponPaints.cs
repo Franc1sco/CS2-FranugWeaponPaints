@@ -44,7 +44,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 {
     public override string ModuleName => "Franug Weapon Paints";
     public override string ModuleAuthor => "Franc1sco Franug";
-    public override string ModuleVersion => "0.0.7c";
+    public override string ModuleVersion => "0.0.7d";
 
     public ConfigGen Config { get; set; } = null!;
     public void OnConfigParsed(ConfigGen config) { Config = config; }
@@ -436,6 +436,14 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
                 return;
             }
 
+            bool warmup = GetGameRules().WarmupPeriod;
+
+            if (warmup)
+            {
+                player.PrintToChat("No usable on warmup, wait for use it.");
+                return;
+            }
+
             var weaponDefIndex = weaponListDef.FirstOrDefault(w => w.Key.Contains(arg1, StringComparison.OrdinalIgnoreCase));
 
             KeyValuePair<string, string>? weaponName = weaponList.FirstOrDefault(w => w.Key.Contains(arg1, StringComparison.OrdinalIgnoreCase));
@@ -528,11 +536,12 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             }
 
             var skinId = int.Parse(arg2);
+            var last = skinList[culture].Count - 1;
 
-            if (skinId > skinList[culture].Count - 1 || skinId < 0)
+            if (skinId < 0)
             {
-                player.PrintToConsole("second arg must be a number and must be between 0-" + (skinList[culture].Count - 1));
-                info.ReplyToCommand("second arg must be a number and must be between 0-" + (skinList[culture].Count - 1));
+                player.PrintToConsole("skin id " + skinId + " not found");
+                info.ReplyToCommand("skin id " + skinId + " not found");
                 return;
             }
 
@@ -547,7 +556,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 
                 player.PrintToConsole("default skin set for " + weaponName.Value.Value);
                 info.ReplyToCommand("default skin set for " + weaponName.Value.Value);
-                updatePlayer(player, weaponDefIndex.Value, 0);
+                _ = updatePlayerAsync(player, weaponDefIndex.Value, 0);
                 return;
             }
             for (int i = 0; i < skinList[culture].Count; i++)
@@ -572,7 +581,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
                 Seed = 0,
                 Wear = 0
             };
-            updatePlayer(player, weaponDefIndex.Value, skinId);
+            _ = updatePlayerAsync(player, weaponDefIndex.Value, skinId);
             gPlayerWeaponsInfo[(int)player.Index][weaponDefIndex.Value] = weaponInfo;
             RefreshWeapons(player, weaponName.Value.Key);
             player.PrintToConsole("new skin set to " + weaponName.Value.Value + " | " + newSkin.Value.Key);
@@ -1043,11 +1052,14 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         }
     }
 
-    private void updatePlayer(CCSPlayerController player, int weapon, int skinid)
+    private async Task updatePlayerAsync(CCSPlayerController player, int weapon, int skinid)
     {
         if (Config.DatabaseType != "MySQL")
         {
-            if (RecordExists(player, weapon))
+            var result = await RecordExistsSQLite(player, weapon);
+
+            //Console.WriteLine("resultado es " + exists.Result);
+            if (result)
             {
                 _ = UpdateQueryDataSQLite(player, weapon, skinid);
             }
@@ -1058,7 +1070,9 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         }
         else
         {
-            if (RecordExists(player, weapon))
+            var result = await RecordExistsMySQL(player, weapon);
+
+            if (result)
             {
                 _ = UpdateQueryDataMySQL(player, weapon, skinid);
             }
@@ -1105,9 +1119,74 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         connectionMySQL.Close();
     }
 
-    private bool RecordExists(CCSPlayerController player, int weapon)
+    private async Task<bool> RecordExistsMySQL(CCSPlayerController player, int weapon)
     {
-        return gPlayerWeaponsInfo[(int)player.Index].ContainsKey(weapon);
+        try
+        {
+            await connectionMySQL.OpenAsync();
+
+            var query = "SELECT * FROM wp_player_skins WHERE steamid = @steamid AND weapon_defindex = @weapon_defindex;";
+
+            var command = new MySqlCommand(query, connectionMySQL);
+            command.Parameters.AddWithValue("@steamid", player.SteamID);
+            command.Parameters.AddWithValue("@weapon_defindex", weapon);
+            var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                int weaponDefIndex = Convert.ToInt32(reader["weapon_defindex"]);
+                int skinid = Convert.ToInt32(reader["weapon_paint_id"]);
+
+                if (skinid > 0)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Franug-WeaponPaints] RecordExistsMySQL ******* An error occurred: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            await connectionMySQL?.CloseAsync();
+        }
+    }
+
+    private async Task<bool> RecordExistsSQLite(CCSPlayerController player, int weapon)
+    {
+        try
+        {
+            await connectionSQLITE.OpenAsync();
+
+            var query = "SELECT * FROM wp_player_skins WHERE steamid = @steamid AND weapon_defindex = @weapon_defindex;";
+
+            var command = new SqliteCommand(query, connectionSQLITE);
+            command.Parameters.AddWithValue("@steamid", player.SteamID);
+            command.Parameters.AddWithValue("@weapon_defindex", weapon);
+            var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                int weaponDefIndex = Convert.ToInt32(reader["weapon_defindex"]);
+                int skinid = Convert.ToInt32(reader["weapon_paint_id"]);
+
+                if (skinid > 0)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Franug-WeaponPaints] RecordExistsSQLite ******* An error occurred: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            await connectionSQLITE?.CloseAsync();
+        }
     }
 
     public async Task InsertQueryDataSQLite(CCSPlayerController player, int weapon, int skinid)
@@ -1142,7 +1221,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         {
             await connectionSQLITE.OpenAsync();
 
-            var query = "UPDATE wp_player_skins SET weapon_defindex = @weapon_defindex, weapon_paint_id = @weapon_paint_id WHERE steamid = @steamid;";
+            var query = "UPDATE wp_player_skins SET weapon_paint_id = @weapon_paint_id WHERE steamid = @steamid AND weapon_defindex = @weapon_defindex;";
             var command = new SqliteCommand(query, connectionSQLITE);
 
             command.Parameters.AddWithValue("@steamid", player.SteamID);
@@ -1306,6 +1385,11 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         }
 
         return currentlang;
+    }
+
+    private CCSGameRules GetGameRules()
+    {
+        return Utilities.FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules").First().GameRules!;
     }
 }
 
