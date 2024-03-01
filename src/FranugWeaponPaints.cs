@@ -15,6 +15,7 @@ using Microsoft.Data.Sqlite;
 using MySqlConnector;
 using CounterStrikeSharp.API.Core.Translations;
 using System.Globalization;
+using System.Runtime.InteropServices;
 
 namespace FranugWeaponPaints;
 
@@ -44,7 +45,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 {
     public override string ModuleName => "Franug Weapon Paints";
     public override string ModuleAuthor => "Franc1sco Franug";
-    public override string ModuleVersion => "0.0.8b";
+    public override string ModuleVersion => "0.0.8c";
 
     public ConfigGen Config { get; set; } = null!;
     public void OnConfigParsed(ConfigGen config) { Config = config; }
@@ -840,14 +841,57 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
         if (!isKnife && weapon.CBodyComponent != null && weapon.CBodyComponent.SceneNode != null)
         {
             var skeleton = GetSkeletonInstance(weapon.CBodyComponent.SceneNode);
-            skeleton.ModelState.MeshGroupMask = 2;
+            int[] newPaints = { 1171, 1170, 1169, 1164, 1162, 1161, 1159, 1175, 1174, 1167, 1165, 1168, 1163, 1160, 1166, 1173 };
+
+            if (newPaints.Contains(weaponInfo.Paint))
+            {
+                skeleton.ModelState.MeshGroupMask = 1;
+            }
+            else
+            {
+                if (skeleton.ModelState.MeshGroupMask != 2)
+                {
+                    skeleton.ModelState.MeshGroupMask = 2;
+                }
+            }
         }
+
+        var viewModels1 = GetPlayerViewModels(player);
+        if (viewModels1 == null || viewModels1.Length == 0)
+            return;
+
+        var viewModel1 = viewModels1[0];
+        if (viewModel1 == null || viewModel1.Value == null || viewModel1.Value.Weapon == null || viewModel1.Value.Weapon.Value == null)
+            return;
+
+        Utilities.SetStateChanged(viewModel1.Value, "CBaseEntity", "m_CBodyComponent");
     }
 
     private static CSkeletonInstance GetSkeletonInstance(CGameSceneNode node)
     {
         Func<nint, nint> GetSkeletonInstance = VirtualFunction.Create<nint, nint>(node.Handle, 8);
         return new CSkeletonInstance(GetSkeletonInstance(node.Handle));
+    }
+
+    private static unsafe CHandle<CBaseViewModel>[]? GetPlayerViewModels(CCSPlayerController player)
+    {
+        if (player.PlayerPawn.Value == null || player.PlayerPawn.Value.ViewModelServices == null) return null;
+        CCSPlayer_ViewModelServices viewModelServices = new CCSPlayer_ViewModelServices(player.PlayerPawn.Value.ViewModelServices!.Handle);
+        return GetFixedArray<CHandle<CBaseViewModel>>(viewModelServices.Handle, "CCSPlayer_ViewModelServices", "m_hViewModel", 3);
+    }
+
+    public static unsafe T[] GetFixedArray<T>(nint pointer, string @class, string member, int length) where T : CHandle<CBaseViewModel>
+    {
+        nint ptr = pointer + Schema.GetSchemaOffset(@class, member);
+        Span<nint> references = MemoryMarshal.CreateSpan<nint>(ref ptr, length);
+        T[] values = new T[length];
+
+        for (int i = 0; i < length; i++)
+        {
+            values[i] = (T)Activator.CreateInstance(typeof(T), references[i])!;
+        }
+
+        return values;
     }
 
     private void RefreshWeapons(CCSPlayerController? player, string searched, int weaponindex)
@@ -882,7 +926,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
                     //if (weapon.Value.AttributeManager.Item.ItemDefinitionIndex == 42 || weapon.Value.AttributeManager.Item.ItemDefinitionIndex == 59)
                     try
                     {
-                        
+
                         if (!weaponDefindex.ContainsKey(weapon.Value.AttributeManager.Item.ItemDefinitionIndex)) continue;
                         int clip1, reservedAmmo;
 
@@ -890,23 +934,19 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
                         reservedAmmo = weapon.Value.ReserveAmmo[0];
 
                         string weaponByDefindex = weaponDefindex[weapon.Value.AttributeManager.Item.ItemDefinitionIndex];
-                        removePlayerWeapon(player, weapon.Value);
-                        //player.RemoveItemByDesignerName(weapon.Value.DesignerName, true);
-                        AddTimer(0.4f, () =>
-                        {
-                            CBasePlayerWeapon newWeapon = new(player.GiveNamedItem(weaponByDefindex));
+                        player.RemoveItemByDesignerName(weapon.Value.DesignerName, true);
+                        CBasePlayerWeapon newWeapon = new(player.GiveNamedItem(weaponByDefindex));
 
-                            Server.NextFrame(() =>
+                        Server.NextFrame(() =>
+                        {
+                            if (newWeapon == null) return;
+                            try
                             {
-                                if (newWeapon == null) return;
-                                try
-                                {
-                                    newWeapon.Clip1 = clip1;
-                                    newWeapon.ReserveAmmo[0] = reservedAmmo;
-                                }
-                                catch (Exception)
-                                { }
-                            });
+                                newWeapon.Clip1 = clip1;
+                                newWeapon.ReserveAmmo[0] = reservedAmmo;
+                            }
+                            catch (Exception)
+                            { }
                         });
                     }
                     catch (Exception ex)
