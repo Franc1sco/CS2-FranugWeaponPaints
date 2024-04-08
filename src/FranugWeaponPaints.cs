@@ -45,7 +45,7 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 {
     public override string ModuleName => "Franug Weapon Paints";
     public override string ModuleAuthor => "Franc1sco Franug";
-    public override string ModuleVersion => "0.0.8c";
+    public override string ModuleVersion => "0.0.9";
 
     public ConfigGen Config { get; set; } = null!;
     public void OnConfigParsed(ConfigGen config) { Config = config; }
@@ -824,8 +824,18 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
 
         if (isKnife)
         {
+            var newIndex = weaponListDef.FirstOrDefault(w => w.Key.Contains(g_playersKnife[playerIndex], StringComparison.OrdinalIgnoreCase));
             //Console.WriteLine("EntityQuality 3 hecho");
+            if (newIndex.Value == 0) return;
+
+            if (weapon.AttributeManager.Item.ItemDefinitionIndex != newIndex.Value)
+            {
+                SubclassChange(weapon, (ushort)newIndex.Value);
+            }
+
+            weapon.AttributeManager.Item.ItemDefinitionIndex = (ushort)newIndex.Value;
             weapon.AttributeManager.Item.EntityQuality = 3;
+            weaponDefIndex = (ushort)newIndex.Value;
         }
 
         //Console.WriteLine("casi aplicado skin para weaponindex " + weaponDefIndex);
@@ -1028,16 +1038,8 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
             player.PrintToChat("max knife changes reached this round");
             return;
         }
-
-        if (g_playersKnife.TryGetValue((int)player.Index, out var knife) && knife != "")
-        {
-            player.GiveNamedItem(knife);
-        }
-        else
-        {
-            var defaultKnife = (CsTeam)player.TeamNum == CsTeam.Terrorist ? "weapon_knife_t" : "weapon_knife";
-            player.GiveNamedItem(defaultKnife);
-        }
+        var defaultKnife = (CsTeam)player.TeamNum == CsTeam.Terrorist ? "weapon_knife_t" : "weapon_knife";
+        player.GiveNamedItem(defaultKnife);
     }
 
     private bool PlayerHasKnife(CCSPlayerController? player)
@@ -1601,6 +1603,18 @@ public class FranugWeaponPaints : BasePlugin, IPluginConfig<ConfigGen>
                 }
             });
         });
+    }
+
+    private static string SubclassChangeWindowsSig = @"\x48\x89\x5C\x24\x08\x57\x48\x83\xEC\x20\x48\x8B\xDA\x48\x8B\xF9\xE8\x2A\x2A\x2A\x2A\x84\xC0\x74\x2A\x41\xB0\x01";
+    private static string SubclassChangeInputLinuxSig = @"\x55\x48\x89\xE5\x41\x57\x41\x56\x41\x55\x49\x89\xF5\x41\x54\x49\x89\xFC\x53\x48\x81\xEC\xA8\x00\x00\x00";
+
+    private static void SubclassChange(CBasePlayerWeapon weapon, ushort itemD)
+    {
+        var SubclassChangeFunc = VirtualFunction.Create<nint, string, int>(
+            new(RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? SubclassChangeInputLinuxSig : SubclassChangeWindowsSig)
+        );
+
+        SubclassChangeFunc(weapon.Handle, itemD.ToString());
     }
 }
 
